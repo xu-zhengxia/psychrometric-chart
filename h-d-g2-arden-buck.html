@@ -1,0 +1,1374 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>湿空气焓湿图 (h-d图) - 标准大气压 101325 Pa</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      font-family: "Microsoft YaHei", "SimHei", "PingFang SC", "DejaVu Sans", sans-serif;
+      user-select: none;
+      overflow: hidden;
+    }
+    .math-font {
+      font-family: "Times New Roman", "STIXGeneral", "Cambria Math", serif;
+    }
+    /* Custom scrollbar for side panel */
+    ::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 3px;
+    }
+    svg text {
+      font-family: "Microsoft YaHei", "SimHei", "PingFang SC", sans-serif;
+    }
+    svg .stix-math {
+      font-family: "Times New Roman", "STIXGeneral", Georgia, serif;
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 h-screen w-screen flex flex-col">
+
+  <!-- 顶部控制与实时状态栏 -->
+  <header class="bg-white border-b border-slate-200 px-4 py-2 flex flex-wrap items-center justify-between gap-2 shadow-sm z-20">
+    <div class="flex items-center gap-3">
+      <div class="w-3 h-6 bg-slate-800 rounded-sm"></div>
+      <div>
+        <h1 class="text-base font-bold text-slate-900 leading-tight">湿空气焓湿图 (<span class="math-font italic">h-d</span> 图)</h1>
+        <p class="text-xs text-slate-500">标准大气压力 <span class="math-font">B = 101325 Pa (760 mmHg)</span> · 1:1 工程精确复刻版</p>
+      </div>
+    </div>
+
+    <!-- 实时空气状态参数读数面板 -->
+    <div id="live-readout" class="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-mono">
+      <div><span class="text-slate-400">t:</span> <span id="val-t" class="font-semibold text-slate-800">--</span> <span class="text-slate-500">℃</span></div>
+      <div class="text-slate-300">|</div>
+      <div><span class="text-slate-400">d:</span> <span id="val-d" class="font-semibold text-slate-800">--</span> <span class="text-slate-500">g/kg(a)</span></div>
+      <div class="text-slate-300">|</div>
+      <div><span class="text-slate-400">h:</span> <span id="val-h" class="font-semibold text-slate-800">--</span> <span class="text-slate-500">kJ/kg(a)</span></div>
+      <div class="text-slate-300">|</div>
+      <div><span class="text-slate-400">φ:</span> <span id="val-phi" class="font-semibold text-slate-800">--</span> <span class="text-slate-500">%</span></div>
+      <div class="text-slate-300">|</div>
+      <div><span class="text-slate-400">v:</span> <span id="val-v" class="font-semibold text-slate-800">--</span> <span class="text-slate-500">m³/kg(a)</span></div>
+      <div class="text-slate-300">|</div>
+      <div><span class="text-slate-400">p<sub>v</sub>:</span> <span id="val-pv" class="font-semibold text-slate-800">--</span> <span class="text-slate-500">Pa</span></div>
+      <div class="text-slate-300 hidden xl:block">|</div>
+      <div class="hidden xl:block"><span class="text-slate-400">t<sub>dp</sub>:</span> <span id="val-tdp" class="font-semibold text-slate-800">--</span> <span class="text-slate-500">℃</span></div>
+    </div>
+
+    <!-- 工具按钮组 -->
+    <div class="flex items-center gap-1.5">
+      <label class="flex items-center gap-1 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1.5 rounded cursor-pointer transition">
+        <input type="checkbox" id="toggle-crosshair" checked class="rounded text-slate-800 focus:ring-0" />
+        <span>十字准星</span>
+      </label>
+      <button id="btn-clear-pts" class="hidden text-xs bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-1.5 rounded transition">
+        清除状态点
+      </button>
+      <button id="btn-zoom-in" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1.5 rounded transition" title="放大">
+        放大 +
+      </button>
+      <button id="btn-zoom-out" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1.5 rounded transition" title="缩小">
+        缩小 −
+      </button>
+      <button id="btn-reset" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1.5 rounded transition" title="复位视图">
+        复位
+      </button>
+      <button id="btn-export-svg" class="text-xs bg-slate-800 hover:bg-slate-700 text-white px-2.5 py-1.5 rounded transition">
+        导出 SVG
+      </button>
+      <button id="btn-export-png" class="text-xs bg-blue-600 hover:bg-blue-500 text-white px-2.5 py-1.5 rounded transition">
+        导出高清 PNG
+      </button>
+    </div>
+  </header>
+
+  <!-- 主画布容器 -->
+  <main class="flex-1 relative overflow-hidden bg-white flex items-center justify-center" id="viewport">
+    <svg id="chart-svg" xmlns="http://www.w3.org/2000/svg" class="w-full h-full cursor-crosshair select-none"></svg>
+
+    <!-- 左上角：输入状态参数绘制状态点面板 -->
+    <div class="absolute top-3 left-3 z-10 w-72 bg-white/95 backdrop-blur border border-slate-300 rounded-lg shadow-md text-xs pointer-events-auto transition-all">
+      <div class="px-3 py-2 border-b border-slate-200 flex items-center justify-between bg-slate-50/80 rounded-t-lg">
+        <div class="font-bold text-slate-800 flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-red-600 inline-block"></span>
+          <span>输入状态参数绘点</span>
+        </div>
+        <button id="btn-toggle-input-panel" class="text-slate-400 hover:text-slate-700 px-1 font-mono text-xs" title="折叠/展开面板">
+          收起 −
+        </button>
+      </div>
+
+      <div id="input-panel-body" class="p-3 space-y-2.5">
+        <!-- 参数组合选择 -->
+        <div>
+          <label class="block text-[11px] text-slate-500 mb-1">已知参数组合类型</label>
+          <select id="param-mode" class="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-slate-600">
+            <option value="t_phi">干球温度 t + 相对湿度 φ</option>
+            <option value="t_d">干球温度 t + 含湿量 d</option>
+            <option value="t_h">干球温度 t + 比焓 h</option>
+            <option value="d_h">含湿量 d + 比焓 h</option>
+            <option value="t_tdp">干球温度 t + 露点温度 t_dp</option>
+          </select>
+        </div>
+
+        <!-- 两个参数输入框 -->
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label id="label-param-1" class="block text-[11px] text-slate-500 mb-1">干球温度 t (℃)</label>
+            <input type="number" id="input-param-1" step="0.1" value="25.0"
+              class="w-full bg-white border border-slate-300 rounded px-2 py-1 text-xs font-mono text-slate-800 focus:outline-none focus:border-blue-600" />
+          </div>
+          <div>
+            <label id="label-param-2" class="block text-[11px] text-slate-500 mb-1">相对湿度 φ (%)</label>
+            <input type="number" id="input-param-2" step="0.1" value="60.0"
+              class="w-full bg-white border border-slate-300 rounded px-2 py-1 text-xs font-mono text-slate-800 focus:outline-none focus:border-blue-600" />
+          </div>
+        </div>
+
+        <!-- 错误或超界提示 -->
+        <div id="input-error-msg" class="hidden text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1"></div>
+
+        <!-- 按钮操作区 -->
+        <div class="flex items-center gap-2 pt-0.5">
+          <button id="btn-plot-point" class="flex-1 bg-slate-800 hover:bg-slate-700 active:bg-slate-900 text-white font-medium py-1.5 px-3 rounded transition">
+            绘制状态点
+          </button>
+          <button id="btn-clear-from-panel" class="bg-slate-100 hover:bg-slate-200 text-slate-600 py-1.5 px-2.5 rounded transition">
+            清空
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 左下角操作提示与过程计算浮层 -->
+    <div class="absolute bottom-3 left-3 flex flex-col gap-2 pointer-events-none">
+      <div id="process-card" class="hidden bg-white/95 backdrop-blur border border-slate-300 rounded-lg p-3 shadow-md text-xs pointer-events-auto max-w-xs">
+        <div class="font-bold text-slate-800 mb-1 flex items-center justify-between">
+          <span>空气处理过程与热湿比 ε</span>
+          <span class="text-[11px] font-normal text-slate-400">右下角量角器同步指示</span>
+        </div>
+        <div id="process-details" class="space-y-1 text-slate-600 font-mono"></div>
+      </div>
+
+      <div class="bg-white/85 backdrop-blur border border-slate-200 rounded px-2.5 py-1 text-[11px] text-slate-500 shadow-sm">
+        滚轮缩放 · 按住左键拖拽平移 · 单击图内或左上角输入参数可标记状态点并计算热湿比 <span class="math-font">ε = Δh/Δd</span>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // ==================== 1. 湿空气热力学公式与坐标变换 ====================
+    const B = 101325.0;                  // 标准大气压力 B = 101325 Pa (760 mmHg)
+    const p_b = 101325.0;                // 标准大气压 Pa
+    const R_0 = 2501.0;                  // 0℃ 水的汽化潜热 (kJ/kg)
+    const K_SCALE = R_0 * 0.001;         // 2.501 (kJ/g)，使 0℃ 等温线严格水平且等h线成 -45°
+    const C_PA = 1.006;                  // 干空气定压比热容 kJ/(kg·℃) (ASHRAE 标准值)
+    const C_PV = 1.86;                   // 水蒸气定压比热容 kJ/(kg·℃) (ASHRAE 标准值)
+    const R_a = 287.055;                 // 干空气比气体常数 J/(kg·K) (ASHRAE 标准值)
+    const EPSILON_G = 621.945;           // 水蒸气与干空气摩尔质量比 (g/kg(a), M_v/M_a = 18.01528/28.96546)
+    const INV_EPSILON_G = 1.0 / EPSILON_G; // 约 0.001607858 (g/kg)^-1，用于比体积计算
+    const T_ZERO_K = 273.15;             // 摄氏度转热力学温度常数 (K)
+    const LINE_COLOR = '#222222';
+
+    /** 计算饱和水蒸气分压力 p_s (Pa) —— 采用 Arden Buck 修正方程 */
+    function calc_ps(t) {
+      if (t >= 0.0) {
+        return 611.21 * Math.exp((18.678 - t / 234.5) * (t / (257.14 + t)));
+      } else {
+        return 611.15 * Math.exp((23.036 - t / 333.7) * (t / (279.82 + t)));
+      }
+    }
+
+    /** 由水蒸气分压力 p_v (Pa) 精确反算露点/霜点温度 t_dp (℃) —— Arden Buck 方程解析逆函数 */
+    function calc_tdp_from_pv(pv) {
+      if (pv <= 1e-3) return -60.0;
+      if (pv >= 611.21) {
+        const y = Math.log(pv / 611.21);
+        const b = 234.5 * (18.678 - y);
+        const c = 234.5 * 257.14 * y;
+        return 0.5 * (b - Math.sqrt(b * b - 4.0 * c));
+      } else if (pv <= 611.15) {
+        const y = Math.log(pv / 611.15);
+        const b = 333.7 * (23.036 - y);
+        const c = 333.7 * 279.82 * y;
+        return 0.5 * (b - Math.sqrt(b * b - 4.0 * c));
+      } else {
+        return 0.0;
+      }
+    }
+
+    /** 由干球温度 t (℃) 和含湿量 d (g/kg(a)) 计算比焓 h (kJ/kg(a)) */
+    function calc_h(t, d) {
+      return C_PA * t + 0.001 * d * (R_0 + C_PV * t);
+    }
+
+    /** 由比焓 h 和含湿量 d 反算干球温度 t (℃) */
+    function calc_t_from_hd(h, d) {
+      return (h - K_SCALE * d) / (C_PA + 0.001 * C_PV * d);
+    }
+
+    /** 由干球温度 t (℃) 和比焓 h (kJ/kg(a)) 反算含湿量 d (g/kg(a)) */
+    function calc_d_from_th(t, h) {
+      return (h - C_PA * t) / (K_SCALE + 0.001 * C_PV * t);
+    }
+
+    /** 由水蒸气分压力 p_v (Pa) 计算含湿量 d (g/kg(a)) */
+    function calc_d_from_pv(pv) {
+      return (EPSILON_G * pv) / (B - pv);
+    }
+
+    /** 由含湿量 d (g/kg(a)) 计算水蒸气分压力 p_v (Pa) */
+    function calc_pv_from_d(d) {
+      return (B * d) / (EPSILON_G + d);
+    }
+
+    /** 将 (d, h) 转换为等比例笛卡尔绘图坐标 (u, v) */
+    function to_uv(d, h) {
+      return [d, (h - K_SCALE * d) / K_SCALE];
+    }
+
+    /** 由 (u, v) 反算 (d, h) */
+    function from_uv(u, v) {
+      const d = u;
+      const h = (v + u) * K_SCALE;
+      return [d, h];
+    }
+
+    /** 由温度 t 和含湿量 d 直接计算纵坐标 v */
+    function t_to_v(t, d) {
+      return to_uv(d, calc_h(t, d))[1];
+    }
+
+    /** 生成等间距数组 (对应 np.linspace) */
+    function linspace(start, stop, num) {
+      const arr = new Array(num);
+      const step = (stop - start) / (num - 1);
+      for (let i = 0; i < num; i++) {
+        arr[i] = start + step * i;
+      }
+      return arr;
+    }
+
+    /** 一维线性插值 (对应 np.interp) */
+    function interp(x, xp, fp) {
+      if (x <= xp[0]) return fp[0];
+      if (x >= xp[xp.length - 1]) return fp[fp.length - 1];
+      let low = 0, high = xp.length - 1;
+      while (high - low > 1) {
+        const mid = (low + high) >> 1;
+        if (xp[mid] <= x) low = mid;
+        else high = mid;
+      }
+      const t = (x - xp[low]) / (xp[high] - xp[low]);
+      return fp[low] + t * (fp[high] - fp[low]);
+    }
+
+    // ==================== 2. 笛卡尔坐标与 SVG 映射设置 ====================
+    // 放大倍率 S: 1 个 u/v 工程单位对应 S 个 SVG 逻辑像素
+    const S = 28.0;
+    const X = (u) => u * S;
+    const Y = (v) => -v * S; // Matplotlib +v 向上，SVG +y 向下
+
+    const u_min = 0.0, u_max = 42.0;
+    const v_min = t_to_v(-15.0, 0.0);
+    const v_max = t_to_v(64.2, 0.0);
+    const v_pv_line = v_max + 1.65;
+    const v_top_box = v_max + 3.6;
+
+    // 整体视野边界 (严格对应 ax.set_xlim(-2.5, 44.5), ax.set_ylim(v_min - 1.2, v_top_box + 0.6))
+    const xlim = [-2.5, 44.5];
+    const ylim = [v_min - 1.2, v_top_box + 0.6];
+
+    const vbX = X(xlim[0]);
+    const vbY = Y(ylim[1]);
+    const vbW = (xlim[1] - xlim[0]) * S;
+    const vbH = (ylim[1] - ylim[0]) * S;
+
+    const svg = document.getElementById('chart-svg');
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+
+    function createSVGEl(tag, attrs = {}) {
+      const el = document.createElementNS(SVG_NS, tag);
+      for (const [k, v] of Object.entries(attrs)) {
+        el.setAttribute(k, v);
+      }
+      return el;
+    }
+
+    /**
+     * 在 SVG 中添加与 Matplotlib 样式完全一致的线段或折线
+     */
+    function addLine(parent, u1, v1, u2, v2, lw = 0.5, color = LINE_COLOR, clip = false, dash = null) {
+      const attrs = {
+        x1: X(u1).toFixed(2),
+        y1: Y(v1).toFixed(2),
+        x2: X(u2).toFixed(2),
+        y2: Y(v2).toFixed(2),
+        stroke: color,
+        'stroke-width': (lw * 1.25).toFixed(2),
+        'stroke-linecap': 'butt',
+        fill: 'none'
+      };
+      if (clip) attrs['clip-path'] = 'url(#unsat-clip)';
+      if (dash) attrs['stroke-dasharray'] = dash;
+      const line = createSVGEl('line', attrs);
+      parent.appendChild(line);
+      return line;
+    }
+
+    function addPolyline(parent, u_arr, v_arr, lw = 0.5, color = LINE_COLOR, clip = false) {
+      const pts = [];
+      for (let i = 0; i < u_arr.length; i++) {
+        pts.push(`${X(u_arr[i]).toFixed(2)},${Y(v_arr[i]).toFixed(2)}`);
+      }
+      const attrs = {
+        points: pts.join(' '),
+        stroke: color,
+        'stroke-width': (lw * 1.25).toFixed(2),
+        'stroke-linecap': 'round',
+        'stroke-linejoin': 'round',
+        fill: 'none'
+      };
+      if (clip) attrs['clip-path'] = 'url(#unsat-clip)';
+      const poly = createSVGEl('polyline', attrs);
+      parent.appendChild(poly);
+      return poly;
+    }
+
+    /**
+     * 在 SVG 中添加与 Matplotlib ax.text 对齐、字号、旋转、白色背景框一致的文本
+     */
+    function addText(parent, u, v, str, opts = {}) {
+      const {
+        fontsize = 8.5,
+        ha = 'center',
+        va = 'center',
+        rotation = 0, // Matplotlib 逆时针角度
+        color = LINE_COLOR,
+        bg = false,
+        bgPad = 1.8,
+        isMath = false
+      } = opts;
+
+      const x = X(u);
+      const y = Y(v);
+      const fontPx = fontsize * 1.48; // 匹配 16x13.5 英寸下 Matplotlib 字体视觉比例
+
+      let anchor = 'middle';
+      if (ha === 'left') anchor = 'start';
+      else if (ha === 'right') anchor = 'end';
+
+      let baseline = 'central';
+      if (va === 'bottom') baseline = 'alphabetic';
+      else if (va === 'top') baseline = 'hanging';
+
+      const g = createSVGEl('g');
+      if (rotation !== 0) {
+        // SVG 顺时针为正，故取 -rotation
+        g.setAttribute('transform', `rotate(${-rotation}, ${x.toFixed(2)}, ${y.toFixed(2)})`);
+      }
+
+      const lines = String(str).split('\n');
+
+      if (lines.length === 1) {
+        // 如果有 bbox 白色背景遮罩，使用白描边 halo + 矩形衬底确保压线清晰
+        if (bg) {
+          const halo = createSVGEl('text', {
+            x: x.toFixed(2),
+            y: y.toFixed(2),
+            'font-size': fontPx.toFixed(1),
+            'text-anchor': anchor,
+            'dominant-baseline': baseline,
+            stroke: 'white',
+            'stroke-width': (bgPad * 3.2).toFixed(1),
+            'stroke-linejoin': 'round',
+            fill: 'white'
+          });
+          if (isMath) halo.setAttribute('class', 'stix-math');
+          halo.innerHTML = lines[0];
+          g.appendChild(halo);
+        }
+
+        const txt = createSVGEl('text', {
+          x: x.toFixed(2),
+          y: y.toFixed(2),
+          'font-size': fontPx.toFixed(1),
+          'text-anchor': anchor,
+          'dominant-baseline': baseline,
+          fill: color
+        });
+        if (isMath) txt.setAttribute('class', 'stix-math');
+        txt.innerHTML = lines[0];
+        g.appendChild(txt);
+      } else {
+        // 多行文本处理 (如 "热\n湿\n比" 或 "101325Pa\n760mmHg")
+        const lineHeight = fontPx * 1.18;
+        const startOffset = -((lines.length - 1) * lineHeight) / 2;
+        lines.forEach((lineStr, idx) => {
+          const ly = y + startOffset + idx * lineHeight;
+          const tspan = createSVGEl('text', {
+            x: x.toFixed(2),
+            y: ly.toFixed(2),
+            'font-size': fontPx.toFixed(1),
+            'text-anchor': anchor,
+            'dominant-baseline': 'central',
+            fill: color
+          });
+          tspan.textContent = lineStr;
+          g.appendChild(tspan);
+        });
+      }
+
+      parent.appendChild(g);
+      return g;
+    }
+
+    // ==================== 3. 构建主图边界与饱和线裁剪区域 ====================
+    const rootG = createSVGEl('g', { id: 'chart-root' });
+    svg.appendChild(rootG);
+
+    // 白色背景底板（保证导出 PNG/SVG 时背景纯白）
+    rootG.appendChild(createSVGEl('rect', {
+      x: vbX, y: vbY, width: vbW, height: vbH, fill: '#ffffff'
+    }));
+
+    // 计算 phi = 100% 饱和空气线坐标
+    const t_sat_dense = linspace(-15.0, 40.0, 800);
+    const u_sat = [];
+    const v_sat = [];
+
+    for (let i = 0; i < t_sat_dense.length; i++) {
+      const t = t_sat_dense[i];
+      const pv = calc_ps(t);
+      const d = calc_d_from_pv(pv);
+      const h = calc_h(t, d);
+      const [u, v] = to_uv(d, h);
+      if (u <= u_max && v >= v_min && v <= v_max) {
+        u_sat.push(u);
+        v_sat.push(v);
+      }
+    }
+
+    // 构造未饱和空气区域的闭合多边形（用于精确裁剪内部网格线）
+    const polyPts = [
+      `${X(u_min).toFixed(2)},${Y(v_min).toFixed(2)}`,
+      `${X(u_min).toFixed(2)},${Y(v_max).toFixed(2)}`,
+      `${X(u_max).toFixed(2)},${Y(v_max).toFixed(2)}`
+    ];
+    for (let i = u_sat.length - 1; i >= 0; i--) {
+      polyPts.push(`${X(u_sat[i]).toFixed(2)},${Y(v_sat[i]).toFixed(2)}`);
+    }
+
+    const defs = createSVGEl('defs');
+    const clipPath = createSVGEl('clipPath', { id: 'unsat-clip' });
+    clipPath.appendChild(createSVGEl('polygon', { points: polyPts.join(' ') }));
+    defs.appendChild(clipPath);
+    rootG.appendChild(defs);
+
+    // 分层容器（严格对应 Matplotlib zorder 顺序）
+    const layerGrid = createSVGEl('g', { id: 'layer-grid' });         // zorder 2
+    const layerSpecVol = createSVGEl('g', { id: 'layer-spec-vol' });  // zorder 3
+    const layerPhi = createSVGEl('g', { id: 'layer-phi' });           // zorder 4
+    const layerRulers = createSVGEl('g', { id: 'layer-rulers' });     // zorder 5
+    const layerLabels = createSVGEl('g', { id: 'layer-labels' });     // zorder 6~7
+    const layerBorder = createSVGEl('g', { id: 'layer-border' });     // zorder 10
+    const layerInteractive = createSVGEl('g', { id: 'layer-interactive' }); // 交互层
+
+    rootG.appendChild(layerGrid);
+    rootG.appendChild(layerSpecVol);
+    rootG.appendChild(layerPhi);
+    rootG.appendChild(layerRulers);
+    rootG.appendChild(layerLabels);
+    rootG.appendChild(layerBorder);
+    rootG.appendChild(layerInteractive);
+
+    // 绘制闭合多边形外框 (zorder=10)
+    layerBorder.appendChild(createSVGEl('polygon', {
+      points: polyPts.join(' '),
+      fill: 'none',
+      stroke: 'black',
+      'stroke-width': (1.0 * 1.25).toFixed(2),
+      'stroke-linejoin': 'round'
+    }));
+
+    // ==================== 4. 绘制内部高密度网格线 ====================
+    // (1) 定含湿量线 (等 d 线：每 1 g/kg 一条，逢 5 加粗)
+    for (let d_val = 0; d_val <= 42; d_val++) {
+      const lw = (d_val % 5 === 0) ? 0.65 : 0.3;
+      addLine(layerGrid, d_val, v_min, d_val, v_max, lw, LINE_COLOR, true);
+    }
+
+    // (2) 定干球温度线 (等 t 线：每 1℃ 一条，逢 5℃ 加粗)
+    for (let t_val = -15; t_val <= 64; t_val++) {
+      const v0 = t_to_v(t_val, u_min);
+      const v1 = t_to_v(t_val, u_max);
+      const lw = (t_val % 5 === 0) ? 0.65 : 0.3;
+      addLine(layerGrid, u_min, v0, u_max, v1, lw, LINE_COLOR, true);
+
+      if (t_val % 5 === 0 && t_val >= -15 && t_val <= 60) {
+        addText(layerLabels, u_min - 0.35, v0, `${t_val}`, {
+          fontsize: 8.5, ha: 'right', va: 'center'
+        });
+      }
+      if ([40, 45, 50, 55].includes(t_val)) {
+        addText(layerLabels, u_max + 0.25, v1, `${t_val}`, {
+          fontsize: 8.5, ha: 'left', va: 'center'
+        });
+      }
+    }
+
+    addText(layerLabels, u_min - 1.5, t_to_v(26.0, 0.0), '温度(℃)', {
+      fontsize: 10, rotation: 90, ha: 'center', va: 'center'
+    });
+
+    // (3) 定焓线 (等 h 线：每 1 kJ/kg 一条，逢 5 kJ/kg 加粗，严格呈 -45°)
+    for (let h_val = -15; h_val < 175; h_val++) {
+      const s = h_val / K_SCALE;
+      const v0 = s - u_min;
+      const v1 = s - u_max;
+      const lw = (h_val % 5 === 0) ? 0.65 : 0.3;
+      addLine(layerGrid, u_min, v0, u_max, v1, lw, LINE_COLOR, true);
+    }
+
+    // (4) 定相对湿度线 (等 phi 线：5% ~ 100%，每 5% 一条)
+    const t_grid = linspace(-15.0, 65.0, 500);
+    const ps_grid = t_grid.map(calc_ps);
+
+    const phi_label_t = {
+      5: 55.5, 10: 61.5, 15: 60.5, 20: 59.5, 25: 57.5, 30: 55.5,
+      35: 53.5, 40: 51.5, 45: 49.8, 50: 48.0, 55: 46.3, 60: 44.7,
+      65: 44.2, 70: 42.2, 75: 41.8, 80: 39.7, 85: 39.4, 90: 37.8,
+      95: 37.6, 100: 36.2
+    };
+
+    for (let phi_pct = 5; phi_pct <= 100; phi_pct += 5) {
+      const phi = phi_pct / 100.0;
+      const u_c = [];
+      const v_c = [];
+      for (let i = 0; i < t_grid.length; i++) {
+        const pv = phi * ps_grid[i];
+        if (pv < B * 0.95) {
+          const d = calc_d_from_pv(pv);
+          const h = calc_h(t_grid[i], d);
+          const [u, v] = to_uv(d, h);
+          u_c.push(u);
+          v_c.push(v);
+        }
+      }
+      const lw = (phi_pct === 100) ? 1.1 : 0.75;
+      addPolyline(layerPhi, u_c, v_c, lw, LINE_COLOR, phi_pct < 100);
+
+      const t_lbl = phi_label_t[phi_pct];
+      const d_lbl = calc_d_from_pv(phi * calc_ps(t_lbl));
+      let [u_lbl, v_lbl] = to_uv(d_lbl, calc_h(t_lbl, d_lbl));
+      if (phi_pct === 100) {
+        v_lbl -= 0.45;
+      }
+      addText(layerLabels, u_lbl, v_lbl, `${phi_pct}%`, {
+        fontsize: 7.5, ha: 'center', va: 'center', bg: true, bgPad: 1.5
+      });
+    }
+
+    // ==================== 4.5 等比体积线 v = 0.75 ~ 0.95 m³/kg(a)，步长 0.01 ====================
+    const v_specs = Array.from({ length: 21 }, (_, i) => Number((0.75 + 0.01 * i).toFixed(2)));
+    const v_lbl_u = { 0: 0.85, 5: 3.0, 10: 5.0, 15: 7.5, 20: 10.0 };
+    const d_pts_v = linspace(0.0, 45.0, 200);
+
+    v_specs.forEach((v_spec, i) => {
+      const u_arr = [];
+      const v_arr = [];
+      for (let j = 0; j < d_pts_v.length; j++) {
+        const d = d_pts_v[j];
+        const T = (v_spec * p_b) / (R_a * (1.0 + INV_EPSILON_G * d));
+        const t = T - T_ZERO_K;
+        const h = calc_h(t, d);
+        const [u, v] = to_uv(d, h);
+        u_arr.push(u);
+        v_arr.push(v);
+      }
+
+      const is_major = (i % 5 === 0);
+      const lw = is_major ? 0.7 : 0.35;
+      addPolyline(layerSpecVol, u_arr, v_arr, lw, LINE_COLOR, true);
+
+      if (is_major) {
+        const u_lbl_pos = v_lbl_u[i];
+        const T_lbl = (v_spec * p_b) / (R_a * (1.0 + INV_EPSILON_G * u_lbl_pos));
+        const t_lbl = T_lbl - T_ZERO_K;
+        const h_lbl = calc_h(t_lbl, u_lbl_pos);
+        const [u_txt, v_txt] = to_uv(u_lbl_pos, h_lbl);
+        addText(layerLabels, u_txt, v_txt, v_spec.toFixed(2), {
+          fontsize: 7.5, ha: 'center', va: 'bottom', rotation: -10, bg: true, bgPad: 1.2
+        });
+      }
+    });
+
+    // 左上角标注族名：等比体积线 v (m³/kg(a))
+    addText(
+      layerLabels,
+      u_min + 1.6,
+      v_max - 0.4,
+      '等比体积线 <tspan class="stix-math" font-style="italic">v</tspan> (<tspan class="stix-math">m³/kg(a)</tspan>)',
+      { fontsize: 8.5, ha: 'left', va: 'center', bg: true, bgPad: 1.0 }
+    );
+
+    // ==================== 5. 饱和线下方含湿量刻度与四段阶梯式焓值标尺 ====================
+    for (let d_val = 0; d_val < 42; d_val++) {
+      if (d_val >= u_sat[0] && d_val <= u_sat[u_sat.length - 1]) {
+        const v_on_sat = interp(d_val, u_sat, v_sat);
+        const tick_len = (d_val % 5 === 0) ? 0.55 : 0.3;
+        addLine(layerRulers, d_val, v_on_sat, d_val, v_on_sat - tick_len, 0.5, LINE_COLOR, false);
+        if (d_val % 5 === 0 && d_val <= 35) {
+          addText(layerLabels, d_val + 0.15, v_on_sat - 0.85, `${d_val}`, {
+            fontsize: 8, ha: 'center', va: 'top'
+          });
+        }
+      }
+    }
+
+    const enthalpy_rulers = [
+      [-10, 45,  9.2],
+      [45,  75,  13.8],
+      [75,  105, 19.8],
+      [105, 145, 28.2]
+    ];
+
+    const s_sat_arr = u_sat.map((u, idx) => u + v_sat[idx]);
+
+    enthalpy_rulers.forEach(([h_start, h_end, c_base]) => {
+      const s_start = h_start / K_SCALE;
+      const s_end = h_end / K_SCALE;
+      const u_b0 = (s_start + c_base) / 2.0, v_b0 = (s_start - c_base) / 2.0;
+      const u_b1 = (s_end + c_base) / 2.0,   v_b1 = (s_end - c_base) / 2.0;
+      addLine(layerRulers, u_b0, v_b0, u_b1, v_b1, 0.75, LINE_COLOR, false);
+
+      for (let h_val = h_start; h_val <= h_end; h_val++) {
+        const s = h_val / K_SCALE;
+        const u_base = (s + c_base) / 2.0;
+        const v_base = (s - c_base) / 2.0;
+
+        if (h_val % 5 === 0) {
+          let u_0, v_0;
+          if (s <= s_sat_arr[0]) {
+            u_0 = s - v_min;
+            v_0 = v_min;
+          } else {
+            u_0 = interp(s, s_sat_arr, u_sat);
+            v_0 = s - u_0;
+          }
+          addLine(layerRulers, u_0, v_0, u_base, v_base, 0.6, LINE_COLOR, false);
+        } else {
+          const tick_dc = 1.0;
+          const u_in = (s + c_base - tick_dc) / 2.0;
+          const v_in = (s - (c_base - tick_dc)) / 2.0;
+          addLine(layerRulers, u_in, v_in, u_base, v_base, 0.4, LINE_COLOR, false);
+        }
+
+        if (h_val % 10 === 0 && (h_val > h_start || h_start === -10) && h_val < h_end) {
+          const u_txt = (s + c_base - 1.9) / 2.0;
+          const v_txt = (s - (c_base - 1.9)) / 2.0;
+          addText(layerLabels, u_txt, v_txt, `${h_val}`, {
+            fontsize: 8, rotation: -45, ha: 'center', va: 'center'
+          });
+        }
+      }
+    });
+
+    const s_title = 4.0 / K_SCALE;
+    const c_title = 12.0;
+    addText(
+      layerLabels,
+      (s_title + c_title) / 2.0,
+      (s_title - c_title) / 2.0,
+      '焓 <tspan class="stix-math" font-style="italic">h</tspan> (<tspan class="stix-math">kJ/kg(a)</tspan>)',
+      { fontsize: 9, rotation: 45, ha: 'center', va: 'center' }
+    );
+
+    // ==================== 6. 顶部含湿量 d 与水蒸气分压力双层标尺 ====================
+    for (let d_val = 0; d_val <= 40; d_val += 5) {
+      addText(layerLabels, d_val, v_max + 0.55, `${d_val}`, {
+        fontsize: 8.5, ha: 'center', va: 'bottom'
+      });
+    }
+
+    addText(
+      layerLabels,
+      17.5,
+      v_max + 0.55,
+      '含湿量 <tspan class="stix-math" font-style="italic">d</tspan> (<tspan class="stix-math">g/kg(a)</tspan>)',
+      { fontsize: 9.5, ha: 'center', va: 'bottom', bg: true, bgPad: 2.2 }
+    );
+
+    addLine(layerRulers, u_min, v_pv_line, u_max, v_pv_line, 0.8, LINE_COLOR, false);
+
+    for (let pv_half = 0; pv_half < 126; pv_half++) {
+      const pv_unit = pv_half * 0.5;
+      const pv_pa = pv_unit * 100.0;
+      const u_pv = calc_d_from_pv(pv_pa);
+      if (u_pv <= u_max) {
+        let tick_h;
+        if (pv_half % 10 === 0) {
+          tick_h = 0.75;
+          const p_int = Math.round(pv_unit);
+          if (p_int <= 60) {
+            addText(layerLabels, u_pv, v_pv_line + 0.9, `${p_int}`, {
+              fontsize: 8.5, ha: 'center', va: 'bottom'
+            });
+          }
+        } else if (pv_half % 2 === 0) {
+          tick_h = 0.5;
+        } else {
+          tick_h = 0.28;
+        }
+        addLine(layerRulers, u_pv, v_pv_line, u_pv, v_pv_line + tick_h, 0.55, LINE_COLOR, false);
+      }
+    }
+
+    addText(
+      layerLabels,
+      1.6,
+      v_pv_line + 0.9,
+      '<tspan class="stix-math">10²×Pa</tspan>',
+      { fontsize: 8.5, ha: 'center', va: 'bottom', isMath: true }
+    );
+    addText(layerLabels, 19.0, v_pv_line + 1.75, '水蒸气分压力', {
+      fontsize: 9.5, ha: 'center', va: 'bottom'
+    });
+
+    // ==================== 7. 右下角半圆形热湿比 (epsilon) 量角器 ====================
+    const u_c = 28.6, v_c = 1.2;
+    const R_arc = 5.2;
+
+    // 垂直基准线
+    addLine(layerRulers, u_c, v_c - R_arc, u_c, v_c + R_arc + 0.8, 0.8, LINE_COLOR, false);
+
+    // 原点双同心圆与十字靶心
+    layerRulers.appendChild(createSVGEl('circle', {
+      cx: X(u_c).toFixed(2),
+      cy: Y(v_c).toFixed(2),
+      r: (0.42 * S).toFixed(2),
+      fill: 'white',
+      stroke: LINE_COLOR,
+      'stroke-width': (0.8 * 1.25).toFixed(2)
+    }));
+    layerRulers.appendChild(createSVGEl('circle', {
+      cx: X(u_c).toFixed(2),
+      cy: Y(v_c).toFixed(2),
+      r: (0.25 * S).toFixed(2),
+      fill: 'none',
+      stroke: LINE_COLOR,
+      'stroke-width': (0.6 * 1.25).toFixed(2)
+    }));
+    addLine(layerRulers, u_c - 0.65, v_c, u_c + 0.65, v_c, 0.7, LINE_COLOR, false);
+    addLine(layerRulers, u_c, v_c - 0.65, u_c, v_c + 0.65, 0.7, LINE_COLOR, false);
+
+    // 右半圆弧 (theta1 = -90° 到 theta2 = 90°)
+    const arcX0 = X(u_c), arcY0 = Y(v_c + R_arc);
+    const arcX1 = X(u_c), arcY1 = Y(v_c - R_arc);
+    const arcR = R_arc * S;
+    layerRulers.appendChild(createSVGEl('path', {
+      d: `M ${arcX0.toFixed(2)} ${arcY0.toFixed(2)} A ${arcR.toFixed(2)} ${arcR.toFixed(2)} 0 0 1 ${arcX1.toFixed(2)} ${arcY1.toFixed(2)}`,
+      fill: 'none',
+      stroke: LINE_COLOR,
+      'stroke-width': (0.9 * 1.25).toFixed(2)
+    }));
+
+    // -45° 零热湿比基准斜线
+    addLine(
+      layerRulers,
+      u_c,
+      v_c,
+      u_c + R_arc * Math.cos(-Math.PI / 4),
+      v_c + R_arc * Math.sin(-Math.PI / 4),
+      0.8,
+      LINE_COLOR,
+      false
+    );
+
+    function eps_to_theta(eps) {
+      return Math.atan(eps / (1000.0 * K_SCALE) - 1.0);
+    }
+
+    const major_eps = new Set([-10000, -5000, -3000, -2000, -1000, 0, 1000, 2000, 3000, 4000, 5000, 10000]);
+    const minor_eps = [];
+    for (let e = -10000; e < -5000; e += 1000) minor_eps.push(e);
+    for (let e = -5000; e < -3000; e += 500) minor_eps.push(e);
+    for (let e = -3000; e < 3000; e += 200) minor_eps.push(e);
+    for (let e = 3000; e < 5000; e += 500) minor_eps.push(e);
+    for (let e = 5000; e <= 10000; e += 1000) minor_eps.push(e);
+
+    minor_eps.forEach((eps) => {
+      const th = eps_to_theta(eps);
+      const is_major = major_eps.has(eps);
+      const tick_len = is_major ? 0.85 : (eps % 500 === 0 ? 0.55 : 0.32);
+      const u0 = u_c + R_arc * Math.cos(th);
+      const v0 = v_c + R_arc * Math.sin(th);
+      const u1 = u_c + (R_arc + tick_len) * Math.cos(th);
+      const v1 = v_c + (R_arc + tick_len) * Math.sin(th);
+      addLine(layerRulers, u0, v0, u1, v1, is_major ? 0.7 : 0.45, LINE_COLOR, false);
+
+      if (is_major) {
+        const deg = (th * 180.0) / Math.PI;
+        const u_txt = u_c + (R_arc + tick_len + 0.25) * Math.cos(th);
+        const v_txt = v_c + (R_arc + tick_len + 0.25) * Math.sin(th);
+        addText(layerLabels, u_txt, v_txt, `${eps}`, {
+          fontsize: 8, rotation: deg, ha: 'left', va: 'center'
+        });
+      }
+    });
+
+    addText(layerLabels, u_c - 1.2, v_c + 1.2, '热\n湿\n比', {
+      fontsize: 9.5, ha: 'center', va: 'center'
+    });
+
+    // 绘制分数式 1000 × Δh / Δd (完全复刻 r"$1000\times\frac{\Delta h}{\Delta d}$")
+    (function drawFractionFormula(u, v) {
+      const x = X(u), y = Y(v);
+      const g = createSVGEl('g', { class: 'stix-math', fill: LINE_COLOR });
+      const fs = 10 * 1.48;
+      // 左侧 "1000 × "
+      const leftTxt = createSVGEl('text', {
+        x: (x - 16).toFixed(2),
+        y: y.toFixed(2),
+        'font-size': fs.toFixed(1),
+        'text-anchor': 'end',
+        'dominant-baseline': 'central'
+      });
+      leftTxt.textContent = '1000×';
+      g.appendChild(leftTxt);
+
+      // 分子 Δh
+      const numTxt = createSVGEl('text', {
+        x: (x - 2).toFixed(2),
+        y: (y - fs * 0.45).toFixed(2),
+        'font-size': (fs * 0.85).toFixed(1),
+        'text-anchor': 'middle',
+        'dominant-baseline': 'central'
+      });
+      numTxt.innerHTML = 'Δ<tspan font-style="italic">h</tspan>';
+      g.appendChild(numTxt);
+
+      // 分数线
+      g.appendChild(createSVGEl('line', {
+        x1: (x - 13).toFixed(2),
+        y1: y.toFixed(2),
+        x2: (x + 9).toFixed(2),
+        y2: y.toFixed(2),
+        stroke: LINE_COLOR,
+        'stroke-width': '1.0'
+      }));
+
+      // 分母 Δd
+      const denTxt = createSVGEl('text', {
+        x: (x - 2).toFixed(2),
+        y: (y + fs * 0.5).toFixed(2),
+        'font-size': (fs * 0.85).toFixed(1),
+        'text-anchor': 'middle',
+        'dominant-baseline': 'central'
+      });
+      denTxt.innerHTML = 'Δ<tspan font-style="italic">d</tspan>';
+      g.appendChild(denTxt);
+
+      layerLabels.appendChild(g);
+    })(u_c - 1.8, v_c - 2.6);
+
+    // ==================== 8. 底部大气压标注 ====================
+    addText(layerLabels, 19.5, v_min + 1.2, '大气压', {
+      fontsize: 9.5, ha: 'right', va: 'center'
+    });
+    addText(layerLabels, 20.0, v_min + 1.2, '101325Pa\n760mmHg', {
+      fontsize: 9, ha: 'left', va: 'center'
+    });
+
+    // ==================== 9. 交互式缩放、平移、十字准星与状态点计算 ====================
+    let viewState = {
+      x: vbX,
+      y: vbY,
+      w: vbW,
+      h: vbH
+    };
+
+    function updateViewBox() {
+      svg.setAttribute('viewBox', `${viewState.x.toFixed(2)} ${viewState.y.toFixed(2)} ${viewState.w.toFixed(2)} ${viewState.h.toFixed(2)}`);
+    }
+    updateViewBox();
+
+    // 十字准星与过程线图元
+    const crosshairG = createSVGEl('g', { id: 'crosshair-group', style: 'display:none; pointer-events:none;' });
+    const chLineD = createSVGEl('line', { stroke: '#2563eb', 'stroke-width': '1.1', 'stroke-dasharray': '4,3', 'clip-path': 'url(#unsat-clip)' });
+    const chLineT = createSVGEl('line', { stroke: '#dc2626', 'stroke-width': '1.1', 'stroke-dasharray': '4,3', 'clip-path': 'url(#unsat-clip)' });
+    const chLineH = createSVGEl('line', { stroke: '#059669', 'stroke-width': '1.1', 'stroke-dasharray': '4,3', 'clip-path': 'url(#unsat-clip)' });
+    const chDot = createSVGEl('circle', { r: '4.5', fill: '#2563eb', stroke: '#ffffff', 'stroke-width': '1.5' });
+    crosshairG.appendChild(chLineD);
+    crosshairG.appendChild(chLineT);
+    crosshairG.appendChild(chLineH);
+    crosshairG.appendChild(chDot);
+    layerInteractive.appendChild(crosshairG);
+
+    const pinnedG = createSVGEl('g', { id: 'pinned-points-group' });
+    layerInteractive.appendChild(pinnedG);
+
+    const pinnedPoints = []; // 最多保留 2 个状态点用于过程热湿比演示
+
+    /** 将屏幕鼠标坐标转换为工程笛卡尔坐标 (u, v) */
+    function clientToUV(clientX, clientY) {
+      const pt = svg.createSVGPoint();
+      pt.x = clientX;
+      pt.y = clientY;
+      const ctm = svg.getScreenCTM();
+      if (!ctm) return [0, 0];
+      const svgP = pt.matrixTransform(ctm.inverse());
+      return [svgP.x / S, -svgP.y / S];
+    }
+
+    /** 判断 (u, v) 是否在未饱和空气有效区域内 */
+    function isInsideChart(u, v) {
+      if (u < u_min || u > u_max || v < v_min || v > v_max) return false;
+      const [d, h] = from_uv(u, v);
+      const t = calc_t_from_hd(h, d);
+      const ps = calc_ps(t);
+      const pv = calc_pv_from_d(d);
+      return pv <= ps * 1.002;
+    }
+
+    /** 计算 (u, v) 点的全套湿空气状态参数 */
+    function getAirState(u, v) {
+      const [d, h] = from_uv(u, v);
+      const t = calc_t_from_hd(h, d);
+      const pv = calc_pv_from_d(d);
+      const ps = calc_ps(t);
+      const phi = Math.min(100.0, Math.max(0.0, (pv / ps) * 100.0));
+      const v_spec = (R_a * (t + T_ZERO_K) * (1.0 + INV_EPSILON_G * d)) / p_b;
+      const tdp = calc_tdp_from_pv(pv);
+      return { u, v, t, d, h, pv, phi, v_spec, tdp };
+    }
+
+    // 实时读数 DOM 元素
+    const elT = document.getElementById('val-t');
+    const elD = document.getElementById('val-d');
+    const elH = document.getElementById('val-h');
+    const elPhi = document.getElementById('val-phi');
+    const elV = document.getElementById('val-v');
+    const elPv = document.getElementById('val-pv');
+    const elTdp = document.getElementById('val-tdp');
+    const toggleCrosshair = document.getElementById('toggle-crosshair');
+
+    function updateReadoutDisplay(st) {
+      elT.textContent = st.t.toFixed(1);
+      elD.textContent = st.d.toFixed(2);
+      elH.textContent = st.h.toFixed(1);
+      elPhi.textContent = st.phi.toFixed(1);
+      elV.textContent = st.v_spec.toFixed(3);
+      elPv.textContent = st.pv.toFixed(0);
+      elTdp.textContent = st.tdp.toFixed(1);
+    }
+
+    // 拖拽平移与点击判定
+    let isDragging = false;
+    let dragMoved = false;
+    let dragStart = { x: 0, y: 0, vx: 0, vy: 0 };
+
+    svg.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      isDragging = true;
+      dragMoved = false;
+      dragStart = { x: e.clientX, y: e.clientY, vx: viewState.x, vy: viewState.y };
+      svg.classList.remove('cursor-crosshair');
+      svg.classList.add('cursor-grabbing');
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (isDragging) {
+        const dx = e.clientX - dragStart.x;
+        const dy = e.clientY - dragStart.y;
+        if (Math.hypot(dx, dy) > 4) dragMoved = true;
+        const rect = svg.getBoundingClientRect();
+        const scaleX = viewState.w / rect.width;
+        const scaleY = viewState.h / rect.height;
+        const scale = Math.max(scaleX, scaleY);
+        viewState.x = dragStart.vx - dx * scale;
+        viewState.y = dragStart.vy - dy * scale;
+        updateViewBox();
+      }
+
+      const [u, v] = clientToUV(e.clientX, e.clientY);
+      if (isInsideChart(u, v)) {
+        const st = getAirState(u, v);
+        updateReadoutDisplay(st);
+
+        if (toggleCrosshair.checked) {
+          crosshairG.style.display = 'block';
+          chDot.setAttribute('cx', X(u).toFixed(2));
+          chDot.setAttribute('cy', Y(v).toFixed(2));
+
+          // 等 d 线 (垂直)
+          chLineD.setAttribute('x1', X(u).toFixed(2));
+          chLineD.setAttribute('y1', Y(v_min).toFixed(2));
+          chLineD.setAttribute('x2', X(u).toFixed(2));
+          chLineD.setAttribute('y2', Y(v_max).toFixed(2));
+
+          // 等 t 线
+          chLineT.setAttribute('x1', X(u_min).toFixed(2));
+          chLineT.setAttribute('y1', Y(t_to_v(st.t, u_min)).toFixed(2));
+          chLineT.setAttribute('x2', X(u_max).toFixed(2));
+          chLineT.setAttribute('y2', Y(t_to_v(st.t, u_max)).toFixed(2));
+
+          // 等 h 线 (-45°)
+          const s = st.h / K_SCALE;
+          chLineH.setAttribute('x1', X(u_min).toFixed(2));
+          chLineH.setAttribute('y1', Y(s - u_min).toFixed(2));
+          chLineH.setAttribute('x2', X(u_max).toFixed(2));
+          chLineH.setAttribute('y2', Y(s - u_max).toFixed(2));
+        } else {
+          crosshairG.style.display = 'none';
+        }
+      } else {
+        crosshairG.style.display = 'none';
+      }
+    });
+
+    window.addEventListener('mouseup', (e) => {
+      if (!isDragging) return;
+      isDragging = false;
+      svg.classList.remove('cursor-grabbing');
+      svg.classList.add('cursor-crosshair');
+
+      // 如果未发生拖动，且点击在有效区内，则标记状态点
+      if (!dragMoved && e.target.closest('#chart-svg')) {
+        const [u, v] = clientToUV(e.clientX, e.clientY);
+        if (isInsideChart(u, v)) {
+          addPinnedPoint(getAirState(u, v));
+        }
+      }
+    });
+
+    // 滚轮以鼠标所在位置为中心无级缩放
+    svg.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 0.85 : 1.18;
+      const newW = Math.min(vbW * 2.2, Math.max(vbW * 0.12, viewState.w * factor));
+      const newH = Math.min(vbH * 2.2, Math.max(vbH * 0.12, viewState.h * factor));
+
+      const [uMouse, vMouse] = clientToUV(e.clientX, e.clientY);
+      const svgX = X(uMouse);
+      const svgY = Y(vMouse);
+
+      const relX = (svgX - viewState.x) / viewState.w;
+      const relY = (svgY - viewState.y) / viewState.h;
+
+      viewState.x = svgX - relX * newW;
+      viewState.y = svgY - relY * newH;
+      viewState.w = newW;
+      viewState.h = newH;
+      updateViewBox();
+    }, { passive: false });
+
+    // 状态点标记与热湿比 ε 过程线绘制
+    const btnClearPts = document.getElementById('btn-clear-pts');
+    const processCard = document.getElementById('process-card');
+    const processDetails = document.getElementById('process-details');
+
+    function addPinnedPoint(state) {
+      if (pinnedPoints.length >= 2) {
+        pinnedPoints.length = 0;
+      }
+      pinnedPoints.push(state);
+      updateReadoutDisplay(state);
+      renderPinnedPoints();
+    }
+
+    function renderPinnedPoints() {
+      pinnedG.innerHTML = '';
+      if (pinnedPoints.length === 0) {
+        btnClearPts.classList.add('hidden');
+        processCard.classList.add('hidden');
+        return;
+      }
+      btnClearPts.classList.remove('hidden');
+      processCard.classList.remove('hidden');
+
+      const names = ['A', 'B'];
+
+      if (pinnedPoints.length === 2) {
+        const [p1, p2] = pinnedPoints;
+        // 绘制 A -> B 空气处理过程线
+        addLine(pinnedG, p1.u, p1.v, p2.u, p2.v, 1.5, '#dc2626', false);
+
+        const dh = p2.h - p1.h;
+        const dd = p2.d - p1.d;
+        const eps = Math.abs(dd) > 1e-4 ? (1000.0 * dh) / dd : Infinity;
+
+        // 在右下角热湿比量角器中同步画出平行指示射线
+        const th = Number.isFinite(eps) ? eps_to_theta(eps) : Math.PI / 2;
+        const uRay = u_c + R_arc * Math.cos(th);
+        const vRay = v_c + R_arc * Math.sin(th);
+        addLine(pinnedG, u_c, v_c, uRay, vRay, 1.3, '#dc2626', false, '4,2');
+
+        processDetails.innerHTML = `
+          <div>点 A: t=${p1.t.toFixed(1)}℃, d=${p1.d.toFixed(1)}g/kg, h=${p1.h.toFixed(1)}kJ/kg</div>
+          <div>点 B: t=${p2.t.toFixed(1)}℃, d=${p2.d.toFixed(1)}g/kg, h=${p2.h.toFixed(1)}kJ/kg</div>
+          <div class="pt-1 border-t border-slate-200 text-red-600 font-bold">
+            Δh = ${dh >= 0 ? '+' : ''}${dh.toFixed(2)} kJ/kg · Δd = ${dd >= 0 ? '+' : ''}${dd.toFixed(2)} g/kg
+          </div>
+          <div class="text-red-700 font-bold">
+            热湿比 ε = ${Number.isFinite(eps) ? eps.toFixed(0) : '±∞'} kJ/kg
+          </div>
+        `;
+      } else {
+        const p1 = pinnedPoints[0];
+        processDetails.innerHTML = `
+          <div>已标记状态点 A:</div>
+          <div>t = ${p1.t.toFixed(1)} ℃, φ = ${p1.phi.toFixed(1)} %</div>
+          <div>d = ${p1.d.toFixed(2)} g/kg(a), h = ${p1.h.toFixed(1)} kJ/kg(a)</div>
+          <div class="text-slate-400 pt-1">请继续在图中单击或输入参数标记状态点 B 以计算过程热湿比 ε</div>
+        `;
+      }
+
+      pinnedPoints.forEach((pt, idx) => {
+        // 绘制状态点虚线辅助坐标线 (等d线、等t线)
+        addLine(pinnedG, pt.u, v_min, pt.u, pt.v, 0.7, '#dc2626', true, '3,3');
+        addLine(pinnedG, u_min, t_to_v(pt.t, u_min), pt.u, pt.v, 0.7, '#dc2626', true, '3,3');
+
+        const cx = X(pt.u), cy = Y(pt.v);
+        pinnedG.appendChild(createSVGEl('circle', {
+          cx: cx.toFixed(2),
+          cy: cy.toFixed(2),
+          r: '5',
+          fill: '#dc2626',
+          stroke: '#ffffff',
+          'stroke-width': '1.8'
+        }));
+        addText(pinnedG, pt.u + 0.65, pt.v + 0.55, `${names[idx]}(${pt.t.toFixed(1)}℃, ${pt.d.toFixed(1)})`, {
+          fontsize: 8, ha: 'left', va: 'bottom', color: '#b91c1c', bg: true, bgPad: 1.5
+        });
+      });
+    }
+
+    function clearAllPinnedPoints() {
+      pinnedPoints.length = 0;
+      renderPinnedPoints();
+      hideInputError();
+    }
+
+    btnClearPts.addEventListener('click', clearAllPinnedPoints);
+
+    // ==================== 9.5 输入状态参数框逻辑 ====================
+    const paramModeEl = document.getElementById('param-mode');
+    const labelParam1 = document.getElementById('label-param-1');
+    const labelParam2 = document.getElementById('label-param-2');
+    const inputParam1 = document.getElementById('input-param-1');
+    const inputParam2 = document.getElementById('input-param-2');
+    const inputErrorMsg = document.getElementById('input-error-msg');
+    const btnPlotPoint = document.getElementById('btn-plot-point');
+    const btnClearFromPanel = document.getElementById('btn-clear-from-panel');
+    const btnToggleInputPanel = document.getElementById('btn-toggle-input-panel');
+    const inputPanelBody = document.getElementById('input-panel-body');
+
+    const paramConfig = {
+      t_phi: { label1: '干球温度 t (℃)', val1: '25.0', label2: '相对湿度 φ (%)', val2: '60.0' },
+      t_d:   { label1: '干球温度 t (℃)', val1: '25.0', label2: '含湿量 d (g/kg)', val2: '12.0' },
+      t_h:   { label1: '干球温度 t (℃)', val1: '25.0', label2: '比焓 h (kJ/kg)', val2: '55.0' },
+      d_h:   { label1: '含湿量 d (g/kg)', val1: '12.0', label2: '比焓 h (kJ/kg)', val2: '55.0' },
+      t_tdp: { label1: '干球温度 t (℃)', val1: '25.0', label2: '露点温度 t_dp (℃)', val2: '16.7' }
+    };
+
+    function showInputError(msg) {
+      inputErrorMsg.textContent = msg;
+      inputErrorMsg.classList.remove('hidden');
+    }
+
+    function hideInputError() {
+      inputErrorMsg.textContent = '';
+      inputErrorMsg.classList.add('hidden');
+    }
+
+    paramModeEl.addEventListener('change', () => {
+      const cfg = paramConfig[paramModeEl.value];
+      if (cfg) {
+        labelParam1.textContent = cfg.label1;
+        inputParam1.value = cfg.val1;
+        labelParam2.textContent = cfg.label2;
+        inputParam2.value = cfg.val2;
+        hideInputError();
+      }
+    });
+
+    btnToggleInputPanel.addEventListener('click', () => {
+      const isHidden = inputPanelBody.classList.toggle('hidden');
+      btnToggleInputPanel.textContent = isHidden ? '展开 +' : '收起 −';
+    });
+
+    function handlePlotByInput() {
+      hideInputError();
+      const mode = paramModeEl.value;
+      const v1 = parseFloat(inputParam1.value);
+      const v2 = parseFloat(inputParam2.value);
+
+      if (Number.isNaN(v1) || Number.isNaN(v2)) {
+        showInputError('请输入有效的数值参数');
+        return;
+      }
+
+      let t, d, h;
+      if (mode === 't_phi') {
+        t = v1;
+        const phi = v2;
+        if (phi < 0 || phi > 100) {
+          showInputError('相对湿度 φ 必须在 0% ~ 100% 之间');
+          return;
+        }
+        const ps = calc_ps(t);
+        const pv = (phi / 100.0) * ps;
+        if (pv >= B * 0.95) {
+          showInputError('水蒸气分压力过高，超出标准大气压图范围');
+          return;
+        }
+        d = calc_d_from_pv(pv);
+        h = calc_h(t, d);
+      } else if (mode === 't_d') {
+        t = v1;
+        d = v2;
+        h = calc_h(t, d);
+      } else if (mode === 't_h') {
+        t = v1;
+        h = v2;
+        d = calc_d_from_th(t, h);
+      } else if (mode === 'd_h') {
+        d = v1;
+        h = v2;
+        t = calc_t_from_hd(h, d);
+      } else if (mode === 't_tdp') {
+        t = v1;
+        const tdp = v2;
+        if (tdp > t + 1e-4) {
+          showInputError('露点温度 t_dp 不能高于干球温度 t');
+          return;
+        }
+        const pv = calc_ps(tdp);
+        d = calc_d_from_pv(pv);
+        h = calc_h(t, d);
+      }
+
+      const [u, v] = to_uv(d, h);
+      if (u < u_min || u > u_max || v < v_min || v > v_max) {
+        showInputError(`计算状态点 (t=${t.toFixed(1)}℃, d=${d.toFixed(1)}g/kg) 超出图表坐标范围`);
+        return;
+      }
+
+      const ps = calc_ps(t);
+      const pv = calc_pv_from_d(d);
+      if (pv > ps * 1.005) {
+        showInputError(`该状态 (φ>${((pv / ps) * 100).toFixed(0)}%) 位于过饱和雾区，超出未饱和湿空气图范围`);
+        return;
+      }
+
+      const state = getAirState(u, v);
+      addPinnedPoint(state);
+    }
+
+    btnPlotPoint.addEventListener('click', handlePlotByInput);
+    btnClearFromPanel.addEventListener('click', clearAllPinnedPoints);
+
+    // 支持在输入框按回车键直接绘制状态点
+    [inputParam1, inputParam2].forEach((inp) => {
+      inp.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          handlePlotByInput();
+        }
+      });
+    });
+
+    // 顶部缩放与复位按钮
+    document.getElementById('btn-zoom-in').addEventListener('click', () => {
+      const cx = viewState.x + viewState.w / 2;
+      const cy = viewState.y + viewState.h / 2;
+      viewState.w *= 0.8;
+      viewState.h *= 0.8;
+      viewState.x = cx - viewState.w / 2;
+      viewState.y = cy - viewState.h / 2;
+      updateViewBox();
+    });
+
+    document.getElementById('btn-zoom-out').addEventListener('click', () => {
+      const cx = viewState.x + viewState.w / 2;
+      const cy = viewState.y + viewState.h / 2;
+      viewState.w = Math.min(vbW * 2.0, viewState.w * 1.25);
+      viewState.h = Math.min(vbH * 2.0, viewState.h * 1.25);
+      viewState.x = cx - viewState.w / 2;
+      viewState.y = cy - viewState.h / 2;
+      updateViewBox();
+    });
+
+    document.getElementById('btn-reset').addEventListener('click', () => {
+      viewState = { x: vbX, y: vbY, w: vbW, h: vbH };
+      updateViewBox();
+    });
+
+    // ==================== 10. 导出 SVG 与 高清 PNG ====================
+    function getSerializedSVG() {
+      const clone = svg.cloneNode(true);
+      // 导出时恢复完整视野并隐藏鼠标十字准星
+      clone.setAttribute('viewBox', `${vbX.toFixed(2)} ${vbY.toFixed(2)} ${vbW.toFixed(2)} ${vbH.toFixed(2)}`);
+      clone.setAttribute('width', '2400');
+      clone.setAttribute('height', Math.round(2400 * (vbH / vbW)).toString());
+      const ch = clone.querySelector('#crosshair-group');
+      if (ch) ch.remove();
+
+      const styleEl = createSVGEl('style');
+      styleEl.textContent = `
+        text { font-family: "Microsoft YaHei", "SimHei", "PingFang SC", sans-serif; }
+        .stix-math { font-family: "Times New Roman", "STIXGeneral", Georgia, serif; }
+      `;
+      clone.insertBefore(styleEl, clone.firstChild);
+
+      return new XMLSerializer().serializeToString(clone);
+    }
+
+    document.getElementById('btn-export-svg').addEventListener('click', () => {
+      const svgData = getSerializedSVG();
+      const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = '湿空气焓湿图_hd_101325Pa.svg';
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    document.getElementById('btn-export-png').addEventListener('click', () => {
+      const svgData = getSerializedSVG();
+      const img = new Image();
+      const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(svgBlob);
+
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        // 2400px 宽度，完美对应 16x13.5 英寸 @ 150 DPI 分辨率
+        canvas.width = 2400;
+        canvas.height = Math.round(2400 * (vbH / vbW));
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url);
+
+        canvas.toBlob((pngBlob) => {
+          const pngUrl = URL.createObjectURL(pngBlob);
+          const a = document.createElement('a');
+          a.href = pngUrl;
+          a.download = '湿空气焓湿图_hd_101325Pa.png';
+          a.click();
+          URL.revokeObjectURL(pngUrl);
+        }, 'image/png');
+      };
+      img.src = url;
+    });
+  </script>
+</body>
+</html>
